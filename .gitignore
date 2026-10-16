@@ -1,0 +1,25 @@
+# dependencies
+node_modules/
+
+# build output
+dist/
+*.tsbuildinfo
+
+# environment files (secrets!) - only .env.example is committed
+.env
+.env.*
+!.env.example
+
+# logs / OS / editor
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db
+.idea/
+coverage/
+
+# local MongoDB data (npm run db:local)
+.mongo-data/
+
+# uploaded files when STORAGE_DRIVER=local
+server/storage/
