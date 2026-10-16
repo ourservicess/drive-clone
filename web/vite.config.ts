@@ -5,11 +5,12 @@ import { defineConfig } from 'vite';
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   server: {
-    port: 5173,
+    port: 3000,
+    strictPort: true, // fail loudly instead of silently switching to another port
     // Forward /api/* to the Hono server. The browser only ever talks to
-    // localhost:5173, so cookies "just work" and no CORS is needed in development.
+    // localhost:3000, so cookies "just work" and no CORS is needed in development.
     proxy: {
-      '/api': { target: 'http://localhost:3000', changeOrigin: false },
+      '/api': { target: 'http://localhost:3001', changeOrigin: false },
     },
   },
 });

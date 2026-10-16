@@ -23,7 +23,7 @@ A Google Drive-style cloud file storage app.
 ## 1. Architecture
 
 ```
-Browser (React)  ──/api/*──▶  Vite dev proxy  ──▶  Hono API (Node, :3000)
+Browser (React)  ──/api/*──▶  Vite dev proxy  ──▶  Hono API (Node, :3001)
                                                     │            │
                                                  Prisma      AWS S3 SDK
                                                     ▼            ▼
@@ -62,7 +62,7 @@ drive-clone/
 │   │   └── routes/         # auth, files, folders, trash/storage
 │   └── tests/              # Vitest: auth, ownership isolation, files/folders/trash, uploads
 └── web/
-    ├── vite.config.ts      # dev proxy /api → :3000
+    ├── vite.config.ts      # dev proxy /api → :3001
     └── src/
         ├── api/            # fetch wrapper, typed endpoints, XHR upload with progress
         ├── context/        # Auth, Toasts, Drive (refresh, uploads, view mode, usage)
@@ -153,7 +153,7 @@ Edit `server/.env`:
 | Variable | Example | Meaning |
 |---|---|---|
 | `DATABASE_URL` | `mongodb://127.0.0.1:27017/drive_clone?replicaSet=rs0` | MongoDB connection (the default value matches `npm run db:local`) |
-| `WEB_ORIGIN` | `http://localhost:5173` | Where the React app runs (CORS + CSRF) |
+| `WEB_ORIGIN` | `http://localhost:3000` | Where the React app runs (CORS + CSRF) |
 | `STORAGE_DRIVER` | `local` | `local` = folder on this computer, `r2` = Cloudflare R2 |
 | `LOCAL_STORAGE_DIR` | `./storage` | Where local files go (relative to `server/`) |
 | `R2_ACCOUNT_ID` / `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` / `R2_BUCKET` | — | Only for `STORAGE_DRIVER=r2` (step 4.3) |
@@ -182,8 +182,8 @@ In a second terminal (keep `npm run db:local` running in the first):
 npm run dev
 ```
 
-- API: http://localhost:3000
-- App: **http://localhost:5173**
+- API: http://localhost:3001
+- App: **http://localhost:3000**
 
 Open the app, create an account, and upload some files.
 
