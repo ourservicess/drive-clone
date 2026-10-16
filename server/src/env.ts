@@ -17,7 +17,8 @@ const envSchema = z.object({
     .transform((v) => v === 'true'),
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
   SESSION_TTL_DAYS: z.coerce.number().int().positive().default(7),
-  MAX_UPLOAD_MB: z.coerce.number().positive().default(100),
+  // Largest single file in MB. 0 = no limit (the per-user STORAGE_QUOTA_MB still applies).
+  MAX_UPLOAD_MB: z.coerce.number().min(0).default(0),
   STORAGE_QUOTA_MB: z.coerce.number().positive().default(5120),
   // "local" = files are saved on this computer, "r2" = Cloudflare R2.
   STORAGE_DRIVER: z.enum(['local', 'r2']).default('local'),
@@ -54,7 +55,8 @@ export const env = {
   ...parsed.data,
   localStorageDir: resolve(serverRoot, parsed.data.LOCAL_STORAGE_DIR),
   isProduction: parsed.data.NODE_ENV === 'production',
-  maxUploadBytes: Math.floor(parsed.data.MAX_UPLOAD_MB * 1024 * 1024),
+  maxUploadBytes:
+    parsed.data.MAX_UPLOAD_MB === 0 ? Number.POSITIVE_INFINITY : Math.floor(parsed.data.MAX_UPLOAD_MB * 1024 * 1024),
   storageQuotaBytes: Math.floor(parsed.data.STORAGE_QUOTA_MB * 1024 * 1024),
   sessionTtlMs: parsed.data.SESSION_TTL_DAYS * 24 * 60 * 60 * 1000,
 };

@@ -1,17 +1,15 @@
-import { randomUUID } from 'node:crypto';
 import type { Prisma } from '@prisma/client';
 import { env } from '../env.js';
 import { prisma } from '../lib/db.js';
-import { AppError, badRequest, notFound } from '../lib/errors.js';
+import { notFound } from '../lib/errors.js';
 import { pickUniqueName, sanitizeName } from '../lib/filename.js';
-import { mimeTypeFor, previewKindFor, type PreviewKind } from '../lib/mime.js';
+import { previewKindFor, type PreviewKind } from '../lib/mime.js';
 import { storage } from '../lib/storage.js';
 import type { SortOptions } from '../schemas/index.js';
 import type { FileDTO, FolderDTO } from '../types.js';
 import { resolveDestination, getOwnedFolder } from './folderService.js';
 import { fileInclude, toFileDTO, toFolderDTO, type FileWithOwner } from './serializers.js';
 
-export const MAX_FILES_PER_REQUEST = 20;
 const DOWNLOAD_URL_TTL_SECONDS = 60;
 const PREVIEW_URL_TTL_SECONDS = 5 * 60;
 const TEXT_PREVIEW_MAX_BYTES = 1024 * 1024;
@@ -107,7 +105,7 @@ export async function starredFiles(ownerId: string, sort: SortOptions): Promise<
 
 export async function storageUsage(
   ownerId: string,
-): Promise<{ used: number; quota: number; fileCount: number; maxUploadBytes: number }> {
+): Promise<{ used: number; quota: number; fileCount: number; maxUploadBytes: number | null }> {
   const result = await prisma.file.aggregate({
     where: { ownerId }, // files in Trash still count, like Google Drive
     _sum: { size: true },
@@ -117,100 +115,9 @@ export async function storageUsage(
     used: Number(result._sum.size ?? 0n),
     quota: env.storageQuotaBytes,
     fileCount: result._count,
-    maxUploadBytes: env.maxUploadBytes, // lets the UI reject too-large files before uploading
+    // Lets the UI reject too-large files before uploading; null = no per-file limit.
+    maxUploadBytes: Number.isFinite(env.maxUploadBytes) ? env.maxUploadBytes : null,
   };
-}
-
-/**
- * Uploads files to R2 and records them in the database.
- * All-or-nothing: if anything fails, objects already sent to R2 are deleted
- * again, so no orphaned objects or half-created records remain.
- */
-export async function uploadFiles(
-  ownerId: string,
-  folderId: string | null | undefined,
-  files: File[],
-): Promise<FileDTO[]> {
-  if (files.length === 0) throw badRequest('No files were uploaded');
-  if (files.length > MAX_FILES_PER_REQUEST) {
-    throw badRequest(`You can upload at most ${MAX_FILES_PER_REQUEST} files at once`);
-  }
-
-  const targetFolder = await resolveDestination(ownerId, folderId);
-
-  // 1. Validate everything BEFORE storing anything.
-  const prepared = files.map((file) => {
-    const name = sanitizeName(file.name);
-    const mimeType = mimeTypeFor(name);
-    if (!mimeType) {
-      throw new AppError(415, 'UNSUPPORTED_FILE_TYPE', `"${name}" is not an allowed file type`);
-    }
-    if (file.size > env.maxUploadBytes) {
-      throw new AppError(413, 'FILE_TOO_LARGE', `"${name}" is larger than ${env.MAX_UPLOAD_MB} MB`);
-    }
-    // The storage key is generated here - never derived from user input.
-    return { file, name, mimeType, storageKey: `users/${ownerId}/${randomUUID()}` };
-  });
-
-  const incoming = prepared.reduce((sum, p) => sum + p.file.size, 0);
-  const { used, quota } = await storageUsage(ownerId);
-  if (used + incoming > quota) {
-    throw new AppError(507, 'QUOTA_EXCEEDED', 'Not enough storage space. Empty your Trash or delete some files.');
-  }
-
-  // 2. Store the bytes, then 3. create the database rows in one transaction.
-  const storedKeys: string[] = [];
-  try {
-    for (const p of prepared) {
-      try {
-        await storage().putObject(p.storageKey, p.file, p.mimeType);
-      } catch (storageErr) {
-        // Log the real reason (e.g. wrong R2 keys) on the server only.
-        console.error('Storage upload failed:', storageErr);
-        throw new AppError(502, 'STORAGE_ERROR', 'Could not save the file to cloud storage. Please try again.');
-      }
-      storedKeys.push(p.storageKey);
-    }
-
-    const created = await prisma.$transaction(async (tx) => {
-      const taken = (
-        await tx.file.findMany({
-          where: { ownerId, folderId: targetFolder, trashedAt: null },
-          select: { name: true },
-        })
-      ).map((r) => r.name);
-
-      const rows: FileWithOwner[] = [];
-      for (const p of prepared) {
-        const name = pickUniqueName(p.name, taken); // "photo.jpg" -> "photo (1).jpg"
-        taken.push(name);
-        rows.push(
-          await tx.file.create({
-            data: {
-              name,
-              mimeType: p.mimeType,
-              size: BigInt(p.file.size),
-              storageKey: p.storageKey,
-              ownerId,
-              folderId: targetFolder,
-              trashedAt: null, // explicit null (MongoDB: missing field ≠ null)
-            },
-            include: fileInclude,
-          }),
-        );
-      }
-      return rows;
-    });
-
-    return created.map(toFileDTO);
-  } catch (err) {
-    if (storedKeys.length > 0) {
-      await storage()
-        .deleteObjects(storedKeys)
-        .catch((cleanupErr) => console.error('Failed to clean up uploaded objects:', cleanupErr));
-    }
-    throw err;
-  }
 }
 
 export async function updateFile(

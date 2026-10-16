@@ -76,6 +76,43 @@ describe('upload validation', () => {
     expect(JSON.stringify(res.data)).not.toContain('storageKey');
   });
 
+  it('keeps non-English filenames intact', async () => {
+    const { client } = await signedInClient();
+    const res = await client.upload([{ name: 'résumé – 履歴書.txt', content: 'x' }]);
+    expect(res.status).toBe(201);
+    expect(res.data.files[0].name).toBe('résumé – 履歴書.txt');
+  });
+
+  it('accepts folderId before or after the files in the form', async () => {
+    const { client } = await signedInClient();
+    const folder = (await client.post('/api/folders', { json: { name: 'F' } })).data.folder;
+    const form = new FormData();
+    form.append('folderId', folder.id); // before the file this time
+    form.append('files', new File(['x'], 'first.txt'));
+    const res = await client.post('/api/files/upload', { form });
+    expect(res.status).toBe(201);
+    expect(res.data.files[0].folderId).toBe(folder.id);
+  });
+
+  it('is all-or-nothing: a bad file later in the request removes the earlier ones', async () => {
+    const { client, user } = await signedInClient();
+    const res = await client.upload([
+      { name: 'good.txt', content: 'fine' },
+      { name: 'bad.exe', content: 'MZ' },
+    ]);
+    expect(res.status).toBe(415);
+    expect(memoryStorage.objects.size).toBe(0);
+    expect(await prisma.file.count({ where: { ownerId: user.id } })).toBe(0);
+  });
+
+  it('limits the number of files per request', async () => {
+    const { client } = await signedInClient();
+    const many = Array.from({ length: 21 }, (_, i) => ({ name: `f${i}.txt`, content: 'x' }));
+    const res = await client.upload(many);
+    expect(res.status).toBe(400);
+    expect(memoryStorage.objects.size).toBe(0);
+  });
+
   it('cleans up stored objects when an upload fails part-way', async () => {
     const { client, user } = await signedInClient();
     let puts = 0;

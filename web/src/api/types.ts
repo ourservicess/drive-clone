@@ -50,7 +50,8 @@ export interface StorageUsage {
   used: number;
   quota: number;
   fileCount: number;
-  maxUploadBytes: number;
+  /** null = no per-file size limit */
+  maxUploadBytes: number | null;
 }
 
 /** Either a file or a folder, used by the shared file browser. */

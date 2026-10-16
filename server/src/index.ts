@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs';
+import type { Server as HttpServer } from 'node:http';
 import { fileURLToPath } from 'node:url';
 import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
@@ -22,6 +23,9 @@ if (env.isProduction && existsSync(webDist)) {
 const server = serve({ fetch: app.fetch, port: env.PORT }, (info) => {
   console.log(`API server running on http://localhost:${info.port}`);
 });
+// Node cuts off requests that take longer than 5 minutes by default. Large
+// uploads on a slow connection can take longer, so turn that off.
+(server as HttpServer).requestTimeout = 0;
 
 // Remove expired sessions once an hour.
 const cleanup = setInterval(() => {

@@ -157,7 +157,7 @@ Edit `server/.env`:
 | `STORAGE_DRIVER` | `local` | `local` = folder on this computer, `r2` = Cloudflare R2 |
 | `LOCAL_STORAGE_DIR` | `./storage` | Where local files go (relative to `server/`) |
 | `R2_ACCOUNT_ID` / `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` / `R2_BUCKET` | — | Only for `STORAGE_DRIVER=r2` (step 4.3) |
-| `MAX_UPLOAD_MB` | `100` | Max size per file |
+| `MAX_UPLOAD_MB` | `0` | Max size per file in MB; `0` = no limit (uploads are streamed, so big files don't use extra memory) |
 | `STORAGE_QUOTA_MB` | `5120` | Storage per user (5 GB) |
 | `SESSION_TTL_DAYS` | `7` | Login lifetime (extended while active) |
 | `TRUST_PROXY` | `false` | Set `true` only behind a reverse proxy that sets `X-Forwarded-For` |
@@ -291,7 +291,7 @@ All endpoints except signup and login require the session cookie. Every error ha
 | Brute force | 20 auth attempts per IP per 15 minutes |
 | IDOR | Every query filters by `ownerId` from the session; other users' ids return 404 |
 | Path traversal | Storage keys are server-generated (`users/<userId>/<uuid>`); names are display-only and sanitised |
-| Upload validation | Extension allowlist, MIME decided by the server, size limit, per-user quota, max 20 files per request |
+| Upload validation | Extension allowlist, MIME decided by the server, optional per-file size limit, per-user quota (checked while streaming), max 20 files per request, all-or-nothing cleanup |
 | Active content | HTML/SVG/JS are never rendered: previews show them as plain text in `<pre>`, downloads are forced `attachment`; locally served files also get `nosniff` and a `sandbox` Content-Security-Policy |
 | Local file links | HMAC-signed with a per-start random secret, expire in 1–5 minutes, and the key must match `users/<id>/<uuid>`, so no path traversal |
 | Storage cleanup | Failed uploads delete already-stored objects; permanent deletes remove R2 objects before DB documents |

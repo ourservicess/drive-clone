@@ -1,13 +1,9 @@
 import { zValidator } from '@hono/zod-validator';
 import { Hono } from 'hono';
-import { bodyLimit } from 'hono/body-limit';
-import { env } from '../env.js';
-import { AppError, badRequest } from '../lib/errors.js';
 import { onInvalid } from '../lib/validate.js';
 import { requireAuth } from '../middleware/auth.js';
 import {
   idParam,
-  idSchema,
   listFilesQuery,
   searchQuery,
   sortSchema,
@@ -25,21 +21,13 @@ import {
   setStarred,
   starredFiles,
   updateFile,
-  uploadFiles,
 } from '../services/fileService.js';
 import { toFileDTO } from '../services/serializers.js';
 import { deleteFilePermanently, restoreFile, trashFile } from '../services/trashService.js';
+import { uploadFromMultipart } from '../services/uploadService.js';
 import type { AppEnv } from '../types.js';
 
 const param = zValidator('param', idParam, onInvalid);
-
-// Whole request limit: one maximum-size file plus 1 MB for form overhead.
-const uploadLimit = bodyLimit({
-  maxSize: env.maxUploadBytes + 1024 * 1024,
-  onError: () => {
-    throw new AppError(413, 'FILE_TOO_LARGE', `Uploads are limited to ${env.MAX_UPLOAD_MB} MB`);
-  },
-});
 
 // NOTE: fixed paths (/search, /recent, ...) are registered BEFORE /:id so
 // that "search" is never mistaken for a file id.
@@ -61,26 +49,10 @@ export const fileRoutes = new Hono<AppEnv>()
     return c.json({ files: await starredFiles(c.get('user').id, c.req.valid('query')) });
   })
 
-  .post('/upload', uploadLimit, async (c) => {
-    if (!c.req.header('content-type')?.toLowerCase().startsWith('multipart/form-data')) {
-      throw badRequest('Uploads must be sent as multipart/form-data');
-    }
-    const body = await c.req.parseBody({ all: true });
-
-    const raw = body['files'];
-    const list = (Array.isArray(raw) ? raw : raw === undefined ? [] : [raw]).filter(
-      (v): v is File => typeof v !== 'string',
-    );
-
-    let folderId: string | null = null;
-    const rawFolderId = body['folderId'];
-    if (typeof rawFolderId === 'string' && rawFolderId !== '') {
-      const parsed = idSchema.safeParse(rawFolderId);
-      if (!parsed.success) throw badRequest('Invalid folderId');
-      folderId = parsed.data;
-    }
-
-    const files = await uploadFiles(c.get('user').id, folderId, list);
+  // Streams the files straight to storage (see uploadService.ts), so there is
+  // no request-size limit here and large files never sit in memory.
+  .post('/upload', async (c) => {
+    const files = await uploadFromMultipart(c.get('user').id, c.req.header('content-type'), c.req.raw.body);
     return c.json({ files }, 201);
   })
 

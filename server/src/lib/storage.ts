@@ -3,6 +3,7 @@ import {
   GetObjectCommand,
   S3Client,
 } from '@aws-sdk/client-s3';
+import type { Readable } from 'node:stream';
 import { Upload } from '@aws-sdk/lib-storage';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { env } from '../env.js';
@@ -22,7 +23,12 @@ export interface SignedUrlOptions {
  * Tests swap in an in-memory implementation with setStorageDriver().
  */
 export interface StorageDriver {
-  putObject(key: string, body: Blob, contentType: string): Promise<void>;
+  /**
+   * Saves a file. The body is a stream, so even multi-GB files are written
+   * piece by piece instead of being held in memory. If the stream errors
+   * (e.g. a size limit is hit), nothing is left behind.
+   */
+  putObject(key: string, body: Readable, contentType: string): Promise<void>;
   deleteObjects(keys: string[]): Promise<void>;
   getSignedDownloadUrl(key: string, options: SignedUrlOptions): Promise<string>;
   /** Reads at most maxBytes from the start of an object (used for text previews). */
@@ -106,7 +112,9 @@ export function createMemoryDriver(): StorageDriver & { objects: Map<string, Uin
   return {
     objects,
     async putObject(key, body) {
-      objects.set(key, new Uint8Array(await body.arrayBuffer()));
+      const chunks: Buffer[] = [];
+      for await (const chunk of body) chunks.push(chunk as Buffer);
+      objects.set(key, new Uint8Array(Buffer.concat(chunks)));
     },
     async deleteObjects(keys) {
       for (const key of keys) objects.delete(key);

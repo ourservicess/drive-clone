@@ -2,9 +2,7 @@ import { createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypt
 import { createWriteStream } from 'node:fs';
 import { mkdir, open, rename, rm } from 'node:fs/promises';
 import { dirname, resolve, sep } from 'node:path';
-import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import type { ReadableStream as NodeReadableStream } from 'node:stream/web';
 import { contentDisposition, type StorageDriver } from './storage.js';
 
 /**
@@ -69,7 +67,7 @@ export function createLocalDriver(rootDir: string): StorageDriver {
       // cancelled upload never leaves a half-written file under the real name.
       const tmp = `${path}.${randomUUID()}.uploading`;
       try {
-        await pipeline(Readable.fromWeb(body.stream() as NodeReadableStream), createWriteStream(tmp));
+        await pipeline(body, createWriteStream(tmp));
         await rename(tmp, path);
       } catch (err) {
         await rm(tmp, { force: true });

@@ -90,18 +90,25 @@ export function DriveProvider({ children }: { children: ReactNode }) {
   const startUploads = useCallback(
     (files: File[], folderId: string | null) => {
       if (files.length === 0) return;
-      const maxBytes = usage?.maxUploadBytes;
+      const maxBytes = usage?.maxUploadBytes ?? null; // null = no per-file limit
+      const freeSpace = usage ? usage.quota - usage.used : null;
 
       const tasks = files.map((file) => {
         const id = nextUploadId++;
-        const tooBig = maxBytes !== undefined && file.size > maxBytes;
+        // Quick checks before sending anything (the server checks again).
+        const error =
+          maxBytes !== null && file.size > maxBytes
+            ? `Larger than the ${formatBytes(maxBytes)} limit`
+            : freeSpace !== null && file.size > freeSpace
+              ? `Not enough storage space (${formatBytes(Math.max(0, freeSpace))} free)`
+              : undefined;
         const task: UploadTask = {
           id,
           name: file.name,
           size: file.size,
           progress: 0,
-          status: tooBig ? 'error' : 'queued',
-          error: tooBig ? `Larger than the ${formatBytes(maxBytes!)} limit` : undefined,
+          status: error ? 'error' : 'queued',
+          error,
         };
         return { task, file };
       });
