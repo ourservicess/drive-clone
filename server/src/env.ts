@@ -20,6 +20,11 @@ const envSchema = z.object({
   // Largest single file in MB. 0 = no limit (the per-user STORAGE_QUOTA_MB still applies).
   MAX_UPLOAD_MB: z.coerce.number().min(0).default(0),
   STORAGE_QUOTA_MB: z.coerce.number().positive().default(5120),
+  // Resumable uploads are sent in pieces of this size. If the connection drops,
+  // at most one piece has to be re-sent. (R2 needs at least 5 MB.)
+  UPLOAD_CHUNK_MB: z.coerce.number().positive().default(8),
+  // Unfinished uploads are deleted after this many days without progress.
+  UPLOAD_EXPIRY_DAYS: z.coerce.number().positive().default(7),
   // "local" = files are saved on this computer, "r2" = Cloudflare R2.
   STORAGE_DRIVER: z.enum(['local', 'r2']).default('local'),
   // Folder for local storage (relative paths are relative to the server/ folder).
@@ -31,6 +36,9 @@ const envSchema = z.object({
   R2_BUCKET: z.string().optional(),
 }).superRefine((v, ctx) => {
   if (v.STORAGE_DRIVER !== 'r2') return;
+  if (v.UPLOAD_CHUNK_MB < 5) {
+    ctx.addIssue({ code: 'custom', path: ['UPLOAD_CHUNK_MB'], message: 'must be at least 5 when STORAGE_DRIVER=r2' });
+  }
   for (const key of ['R2_ACCOUNT_ID', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'R2_BUCKET'] as const) {
     if (!v[key] || v[key].startsWith('your-')) {
       ctx.addIssue({ code: 'custom', path: [key], message: `${key} is required when STORAGE_DRIVER=r2` });
@@ -59,4 +67,6 @@ export const env = {
     parsed.data.MAX_UPLOAD_MB === 0 ? Number.POSITIVE_INFINITY : Math.floor(parsed.data.MAX_UPLOAD_MB * 1024 * 1024),
   storageQuotaBytes: Math.floor(parsed.data.STORAGE_QUOTA_MB * 1024 * 1024),
   sessionTtlMs: parsed.data.SESSION_TTL_DAYS * 24 * 60 * 60 * 1000,
+  uploadChunkBytes: Math.max(1, Math.floor(parsed.data.UPLOAD_CHUNK_MB * 1024 * 1024)),
+  uploadExpiryMs: parsed.data.UPLOAD_EXPIRY_DAYS * 24 * 60 * 60 * 1000,
 };

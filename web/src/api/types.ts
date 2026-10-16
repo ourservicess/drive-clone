@@ -13,6 +13,8 @@ export interface FileItem {
   size: number;
   folderId: string | null;
   starred: boolean;
+  /** true = a public "anyone with the link" share link exists */
+  shared: boolean;
   createdAt: string;
   updatedAt: string;
   lastAccessedAt: string;
@@ -52,6 +54,43 @@ export interface StorageUsage {
   fileCount: number;
   /** null = no per-file size limit */
   maxUploadBytes: number | null;
+}
+
+export type UploadStatus = 'uploading' | 'completed' | 'cancelled' | 'failed' | 'expired';
+
+/** One entry in the upload history, as stored on the server. */
+export interface UploadRecord {
+  id: string;
+  name: string;
+  mimeType: string;
+  size: number;
+  receivedBytes: number;
+  chunkSize: number;
+  status: UploadStatus;
+  folderId: string | null;
+  fileId: string | null;
+  /** "size:lastModified:name" - used to check the same file is picked when resuming */
+  fingerprint: string;
+  error: string | null;
+  createdAt: string;
+  updatedAt: string;
+  completedAt: string | null;
+}
+
+export interface Share {
+  token: string;
+  allowDownload: boolean;
+  createdAt: string;
+}
+
+/** What a visitor of a public link sees about the file. */
+export interface PublicFile {
+  name: string;
+  mimeType: string;
+  size: number;
+  createdAt: string;
+  ownerName: string;
+  allowDownload: boolean;
 }
 
 /** Either a file or a folder, used by the shared file browser. */

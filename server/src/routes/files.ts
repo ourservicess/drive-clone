@@ -6,6 +6,7 @@ import {
   idParam,
   listFilesQuery,
   searchQuery,
+  shareSchema,
   sortSchema,
   starSchema,
   updateFileSchema,
@@ -24,6 +25,7 @@ import {
 } from '../services/fileService.js';
 import { toFileDTO } from '../services/serializers.js';
 import { deleteFilePermanently, restoreFile, trashFile } from '../services/trashService.js';
+import { deleteShare, getShare, upsertShare } from '../services/shareService.js';
 import { uploadFromMultipart } from '../services/uploadService.js';
 import type { AppEnv } from '../types.js';
 
@@ -76,6 +78,21 @@ export const fileRoutes = new Hono<AppEnv>()
   .patch('/:id', param, zValidator('json', updateFileSchema, onInvalid), async (c) => {
     const file = await updateFile(c.get('user').id, c.req.valid('param').id, c.req.valid('json'));
     return c.json({ file });
+  })
+
+  // Public share link settings for one file ("Anyone with the link can view").
+  .get('/:id/share', param, async (c) => {
+    return c.json({ share: await getShare(c.get('user').id, c.req.valid('param').id) });
+  })
+
+  .post('/:id/share', param, zValidator('json', shareSchema, onInvalid), async (c) => {
+    const share = await upsertShare(c.get('user').id, c.req.valid('param').id, c.req.valid('json').allowDownload);
+    return c.json({ share });
+  })
+
+  .delete('/:id/share', param, async (c) => {
+    await deleteShare(c.get('user').id, c.req.valid('param').id);
+    return c.json({ ok: true });
   })
 
   .post('/:id/star', param, zValidator('json', starSchema, onInvalid), async (c) => {

@@ -11,6 +11,7 @@ import {
   List,
   Pencil,
   RotateCcw,
+  Share2,
   Star,
   StarOff,
   Trash2,
@@ -27,6 +28,7 @@ import { formatDate } from '../../lib/format';
 import { ConfirmDialog } from '../dialogs/ConfirmDialog';
 import { MoveDialog } from '../dialogs/MoveDialog';
 import { NameDialog } from '../dialogs/NameDialog';
+import { ShareDialog } from '../dialogs/ShareDialog';
 import { Button, IconButton } from '../ui/Button';
 import { GridSkeleton, ListSkeleton } from '../ui/Skeleton';
 import { ContextMenu, type MenuAction } from './ContextMenu';
@@ -103,6 +105,7 @@ export function ItemBrowser({
   const [moving, setMoving] = useState<DriveItem | null>(null);
   const [confirm, setConfirm] = useState<ConfirmState | null>(null);
   const [previewing, setPreviewing] = useState<FileItem | null>(null);
+  const [sharing, setSharing] = useState<FileItem | null>(null);
 
   const entries: DriveItem[] = [
     ...folders.map((item) => ({ type: 'folder' as const, item })),
@@ -209,6 +212,7 @@ export function ItemBrowser({
     return [
       { label: 'Open', icon: Eye, onSelect: () => open(entry) },
       { label: 'Download', icon: Download, onSelect: () => download(file) },
+      { label: file.shared ? 'Share (link is on)' : 'Share', icon: Share2, onSelect: () => setSharing(file) },
       file.starred
         ? {
             label: 'Remove from Starred',
@@ -432,6 +436,8 @@ export function ItemBrowser({
       />
 
       <PreviewModal file={previewing} onClose={closePreview} onDownload={download} />
+
+      <ShareDialog file={sharing} onClose={() => setSharing(null)} />
     </div>
   );
 }

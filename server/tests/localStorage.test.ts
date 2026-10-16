@@ -107,6 +107,37 @@ describe('local disk storage', () => {
     }
   });
 
+  it('resumes an interrupted upload on disk and discards half-written pieces', async () => {
+    const { client } = await signedInClient();
+    const chunk = env.uploadChunkBytes;
+    const content = Buffer.from('x'.repeat(chunk) + 'y'.repeat(chunk) + 'z'.repeat(17));
+    const { upload } = (await client.post('/api/uploads', { json: { name: 'clip.txt', size: content.length } })).data;
+    const piece = (i: number, bytes: Buffer) => client.put(`/api/uploads/${upload.id}/chunks/${i}`, { raw: bytes });
+
+    expect((await piece(0, content.subarray(0, chunk))).status).toBe(200);
+    // Connection drops mid-piece: only 10 bytes of piece 1 arrive.
+    expect((await piece(1, content.subarray(chunk, chunk + 10))).status).toBe(400);
+    expect((await piece(1, content.subarray(chunk, chunk * 2))).status).toBe(200);
+    expect((await piece(2, content.subarray(chunk * 2))).status).toBe(200);
+
+    const done = await client.post(`/api/uploads/${upload.id}/complete`);
+    expect(done.status).toBe(200);
+    const row = await prisma.file.findUniqueOrThrow({ where: { id: done.data.file.id } });
+    expect((await readFile(keyToPath(root, row.storageKey))).equals(content)).toBe(true);
+    expect(existsSync(`${keyToPath(root, row.storageKey)}.partial`)).toBe(false);
+  });
+
+  it('removes the partial file when an upload is cancelled', async () => {
+    const { client } = await signedInClient();
+    const { upload } = (await client.post('/api/uploads', { json: { name: 'a.txt', size: 500 } })).data;
+    await client.put(`/api/uploads/${upload.id}/chunks/0`, { raw: Buffer.alloc(env.uploadChunkBytes, 1) });
+    const row = await prisma.upload.findUniqueOrThrow({ where: { id: upload.id } });
+    const partial = `${keyToPath(root, row.storageKey)}.partial`;
+    expect(existsSync(partial)).toBe(true);
+    await client.post(`/api/uploads/${upload.id}/cancel`);
+    expect(existsSync(partial)).toBe(false);
+  });
+
   it('deletes the file from disk when it is deleted forever', async () => {
     const { client } = await signedInClient();
     const file = await uploadOne(client, 'gone.txt', 'bye');

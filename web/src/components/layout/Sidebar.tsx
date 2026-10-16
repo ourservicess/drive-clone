@@ -1,4 +1,4 @@
-import { Clock, HardDrive, Star, Trash2, X, type LucideIcon } from 'lucide-react';
+import { Clock, CloudUpload, HardDrive, Star, Trash2, X, type LucideIcon } from 'lucide-react';
 import { NavLink } from 'react-router-dom';
 import { IconButton } from '../ui/Button';
 import { NewMenu } from './NewMenu';
@@ -8,6 +8,7 @@ const links: Array<{ to: string; label: string; icon: LucideIcon }> = [
   { to: '/drive', label: 'My Drive', icon: HardDrive },
   { to: '/recent', label: 'Recent', icon: Clock },
   { to: '/starred', label: 'Starred', icon: Star },
+  { to: '/uploads', label: 'Uploads', icon: CloudUpload },
   { to: '/trash', label: 'Trash', icon: Trash2 },
 ];
 

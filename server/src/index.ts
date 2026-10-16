@@ -7,6 +7,7 @@ import { createApp } from './app.js';
 import { env } from './env.js';
 import { prisma } from './lib/db.js';
 import { purgeExpiredSessions } from './lib/session.js';
+import { expireStaleUploads } from './services/resumableUploadService.js';
 
 const app = createApp();
 
@@ -27,9 +28,10 @@ const server = serve({ fetch: app.fetch, port: env.PORT }, (info) => {
 // uploads on a slow connection can take longer, so turn that off.
 (server as HttpServer).requestTimeout = 0;
 
-// Remove expired sessions once an hour.
+// Once an hour: remove expired login sessions and abandoned unfinished uploads.
 const cleanup = setInterval(() => {
   purgeExpiredSessions().catch((err) => console.error('Session cleanup failed:', err));
+  expireStaleUploads().catch((err) => console.error('Upload cleanup failed:', err));
 }, 60 * 60 * 1000);
 
 async function shutdown() {

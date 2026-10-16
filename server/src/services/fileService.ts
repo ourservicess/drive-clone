@@ -160,15 +160,9 @@ export async function getDownloadUrl(
   id: string,
 ): Promise<{ url: string; expiresIn: number }> {
   const file = await getOwnedFile(ownerId, id);
-  const url = await storage().getSignedDownloadUrl(file.storageKey, {
-    filename: file.name,
-    // Downloads are always "attachment", so even HTML/SVG can never run in the browser.
-    contentType: file.mimeType,
-    inline: false,
-    expiresInSeconds: DOWNLOAD_URL_TTL_SECONDS,
-  });
+  const link = await buildDownloadUrl(file);
   await touch(file.id);
-  return { url, expiresIn: DOWNLOAD_URL_TTL_SECONDS };
+  return link;
 }
 
 /**
@@ -194,9 +188,26 @@ export type PreviewResult =
 
 export async function getPreview(ownerId: string, id: string): Promise<PreviewResult> {
   const file = await getOwnedFile(ownerId, id);
-  const kind = previewKindFor(file.mimeType);
   await touch(file.id);
+  return buildPreview(file);
+}
 
+type StoredFile = { storageKey: string; name: string; mimeType: string };
+
+/** Short-lived download link (always "attachment", so nothing runs in the browser). */
+export async function buildDownloadUrl(file: StoredFile): Promise<{ url: string; expiresIn: number }> {
+  const url = await storage().getSignedDownloadUrl(file.storageKey, {
+    filename: file.name,
+    contentType: file.mimeType,
+    inline: false,
+    expiresInSeconds: DOWNLOAD_URL_TTL_SECONDS,
+  });
+  return { url, expiresIn: DOWNLOAD_URL_TTL_SECONDS };
+}
+
+/** Builds what the viewer needs to show a file (used by the owner AND by public share links). */
+export async function buildPreview(file: StoredFile): Promise<PreviewResult> {
+  const kind = previewKindFor(file.mimeType);
   if (kind === 'none') return { kind };
 
   if (kind === 'text') {

@@ -15,6 +15,7 @@ export function toFileDTO(file: FileWithOwner): FileDTO {
     size: Number(file.size),
     folderId: file.folderId,
     starred: file.starred,
+    shared: file.shared ?? false,
     createdAt: file.createdAt.toISOString(),
     updatedAt: file.updatedAt.toISOString(),
     lastAccessedAt: file.lastAccessedAt.toISOString(),

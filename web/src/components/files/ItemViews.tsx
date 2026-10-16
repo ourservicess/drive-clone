@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp, EllipsisVertical, Star } from 'lucide-react';
+import { ArrowDown, ArrowUp, EllipsisVertical, Globe, Star } from 'lucide-react';
 import type { KeyboardEvent, MouseEvent } from 'react';
 import type { DriveItem, SortField, SortState } from '../../api/types';
 import { formatBytes } from '../../lib/format';
@@ -61,8 +61,15 @@ function MoreButton({ entry, onMenu, onSelect }: Pick<ItemProps, 'entry' | 'onMe
 }
 
 function StarBadge({ entry }: { entry: DriveItem }) {
-  if (entry.type !== 'file' || !entry.item.starred) return null;
-  return <Star className="size-3.5 shrink-0 fill-amber-400 text-amber-400" aria-label="Starred" />;
+  if (entry.type !== 'file') return null;
+  return (
+    <>
+      {entry.item.shared && (
+        <Globe className="size-3.5 shrink-0 text-green-600" aria-label="Shared with anyone who has the link" />
+      )}
+      {entry.item.starred && <Star className="size-3.5 shrink-0 fill-amber-400 text-amber-400" aria-label="Starred" />}
+    </>
+  );
 }
 
 // ---------- grid view ----------

@@ -16,6 +16,8 @@ export default defineConfig({
       // Small limits make the upload-validation tests fast.
       MAX_UPLOAD_MB: '1',
       STORAGE_QUOTA_MB: '3',
+      // ~104-byte pieces so small test files are split into several pieces.
+      UPLOAD_CHUNK_MB: '0.0001',
       // Most tests use an in-memory storage driver; localStorage.test.ts uses this temp folder.
       STORAGE_DRIVER: 'local',
       LOCAL_STORAGE_DIR: join(tmpdir(), `drive-clone-test-storage-${process.pid}`),

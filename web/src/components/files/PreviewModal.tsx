@@ -3,10 +3,10 @@ import { useEffect, useState } from 'react';
 import { errorMessage } from '../../api/client';
 import { filesApi } from '../../api/endpoints';
 import type { FileItem, Preview } from '../../api/types';
-import { formatBytes } from '../../lib/format';
-import { Button, IconButton } from '../ui/Button';
+import { IconButton } from '../ui/Button';
 import { Spinner } from '../ui/Spinner';
 import { FileIcon } from './FileIcon';
+import { PreviewBody } from './PreviewBody';
 
 interface Props {
   file: FileItem | null;
@@ -14,11 +14,7 @@ interface Props {
   onDownload: (file: FileItem) => void;
 }
 
-/**
- * Full-screen viewer. Images/PDF/video/audio load from a short-lived R2 URL.
- * Text (including HTML and SVG source) is rendered inside <pre> as plain text,
- * so uploaded active content is never executed in our page.
- */
+/** Full-screen viewer for the owner's own files. */
 export function PreviewModal({ file, onClose, onDownload }: Props) {
   const [preview, setPreview] = useState<Preview | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -70,40 +66,14 @@ export function PreviewModal({ file, onClose, onDownload }: Props) {
           </p>
         ) : !preview ? (
           <Spinner className="size-10 text-white" />
-        ) : preview.kind === 'image' ? (
-          <img src={preview.url} alt={file.name} className="max-h-full max-w-full object-contain" />
-        ) : preview.kind === 'pdf' ? (
-          <iframe src={preview.url} title={file.name} className="size-full max-w-5xl rounded bg-white" />
-        ) : preview.kind === 'video' ? (
-          <video src={preview.url} controls autoPlay className="max-h-full max-w-full">
-            <track kind="captions" />
-          </video>
-        ) : preview.kind === 'audio' ? (
-          <div className="rounded-xl bg-white p-6">
-            <audio src={preview.url} controls autoPlay />
-          </div>
-        ) : preview.kind === 'text' ? (
-          <div className="flex size-full max-w-5xl flex-col overflow-hidden rounded-lg bg-white">
-            {preview.truncated && (
-              <p className="border-b bg-amber-50 px-4 py-2 text-xs text-amber-800">
-                Only the first 1 MB is shown. Download the file to see all of it.
-              </p>
-            )}
-            <pre className="flex-1 overflow-auto p-4 font-mono text-xs leading-relaxed whitespace-pre-wrap text-slate-800">
-              {preview.content}
-            </pre>
-          </div>
         ) : (
-          <div className="flex flex-col items-center gap-4 rounded-2xl bg-white px-10 py-8 text-center">
-            <FileIcon mimeType={file.mimeType} className="size-16" />
-            <div>
-              <p className="font-medium text-slate-800">No preview available</p>
-              <p className="text-sm text-slate-500">{formatBytes(file.size)}</p>
-            </div>
-            <Button onClick={() => onDownload(file)}>
-              <Download className="size-4" aria-hidden /> Download
-            </Button>
-          </div>
+          <PreviewBody
+            preview={preview}
+            name={file.name}
+            mimeType={file.mimeType}
+            size={file.size}
+            onDownload={() => onDownload(file)}
+          />
         )}
       </div>
     </div>

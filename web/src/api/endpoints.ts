@@ -4,8 +4,11 @@ import type {
   FileItem,
   FolderItem,
   Preview,
+  PublicFile,
+  Share,
   SortState,
   StorageUsage,
+  UploadRecord,
   User,
 } from './types';
 
@@ -47,42 +50,71 @@ export const filesApi = {
   deleteForever: (id: string) => api<{ ok: true }>(`/files/${id}/permanent`, { method: 'DELETE' }),
 };
 
+// ---------- sharing ----------
+export const sharesApi = {
+  get: (fileId: string) => api<{ share: Share | null }>(`/files/${fileId}/share`),
+  /** Creates the public link, or changes its download setting. */
+  save: (fileId: string, allowDownload: boolean) =>
+    api<{ share: Share }>(`/files/${fileId}/share`, { method: 'POST', json: { allowDownload } }),
+  remove: (fileId: string) => api<{ ok: true }>(`/files/${fileId}/share`, { method: 'DELETE' }),
+};
+
+/** No login needed: used by the public /s/:token page. */
+export const publicApi = {
+  file: (token: string) => api<{ file: PublicFile }>(`/public/${token}`),
+  preview: (token: string) => api<Preview>(`/public/${token}/preview`),
+  download: (token: string) => api<{ url: string; expiresIn: number }>(`/public/${token}/download`),
+};
+
+// ---------- resumable uploads ----------
+export const uploadsApi = {
+  list: () => api<{ uploads: UploadRecord[] }>('/uploads'),
+  get: (id: string) => api<{ upload: UploadRecord }>(`/uploads/${id}`),
+  create: (input: { name: string; size: number; folderId: string | null; lastModified: number }) =>
+    api<{ upload: UploadRecord }>('/uploads', { method: 'POST', json: input }),
+  complete: (id: string) =>
+    api<{ upload: UploadRecord; file: FileItem | null }>(`/uploads/${id}/complete`, { method: 'POST' }),
+  cancel: (id: string) => api<{ upload: UploadRecord }>(`/uploads/${id}/cancel`, { method: 'POST' }),
+  remove: (id: string) => api<{ ok: true }>(`/uploads/${id}`, { method: 'DELETE' }),
+  clearFinished: () => api<{ removed: number }>('/uploads', { method: 'DELETE' }),
+};
+
 /**
- * Uploads one file. Uses XMLHttpRequest instead of fetch because fetch
- * cannot report upload progress.
+ * Sends one piece of a file. Uses XMLHttpRequest because fetch cannot report
+ * upload progress. Network failures become ApiError(status 0, 'NETWORK_ERROR').
  */
-export function uploadFile(
-  file: File,
-  folderId: string | null,
-  onProgress: (fraction: number) => void,
+export function sendChunk(
+  uploadId: string,
+  index: number,
+  piece: Blob,
+  onProgress: (loadedBytes: number) => void,
   signal: AbortSignal,
-): Promise<FileItem> {
+): Promise<{ receivedBytes: number }> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
-    xhr.open('POST', '/api/files/upload');
+    xhr.open('PUT', `/api/uploads/${uploadId}/chunks/${index}`);
     xhr.withCredentials = true;
     xhr.responseType = 'json';
+    xhr.timeout = 5 * 60 * 1000; // a stalled connection counts as a network error
+    xhr.setRequestHeader('Content-Type', 'application/octet-stream');
 
-    xhr.upload.onprogress = (e) => {
-      if (e.lengthComputable) onProgress(e.loaded / e.total);
-    };
+    xhr.upload.onprogress = (e) => onProgress(e.loaded);
     xhr.onload = () => {
       if (xhr.status >= 200 && xhr.status < 300) {
-        resolve((xhr.response as { files: FileItem[] }).files[0]!);
+        resolve(xhr.response as { receivedBytes: number });
       } else {
         const error = toApiError(xhr.status, xhr.response);
         if (error.code === 'UNAUTHENTICATED') window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT));
         reject(error);
       }
     };
-    xhr.onerror = () => reject(new ApiError(0, 'NETWORK_ERROR', 'Upload failed: network error'));
+    const networkError = () => reject(new ApiError(0, 'NETWORK_ERROR', 'Connection lost'));
+    xhr.onerror = networkError;
+    xhr.ontimeout = networkError;
     xhr.onabort = () => reject(new DOMException('Upload cancelled', 'AbortError'));
-    signal.addEventListener('abort', () => xhr.abort());
-
-    const form = new FormData();
-    form.append('files', file);
-    if (folderId) form.append('folderId', folderId);
-    xhr.send(form);
+    if (signal.aborted) return reject(new DOMException('Upload cancelled', 'AbortError'));
+    signal.addEventListener('abort', () => xhr.abort(), { once: true });
+    xhr.send(piece);
   });
 }
 

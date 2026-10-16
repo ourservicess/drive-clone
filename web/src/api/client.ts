@@ -4,6 +4,8 @@ export class ApiError extends Error {
     public readonly status: number,
     public readonly code: string,
     message: string,
+    /** Extra info from the server, e.g. { receivedBytes } for uploads */
+    public readonly details?: unknown,
   ) {
     super(message);
     this.name = 'ApiError';
@@ -14,16 +16,17 @@ export class ApiError extends Error {
 export const SESSION_EXPIRED_EVENT = 'drive:session-expired';
 
 export function toApiError(status: number, body: unknown): ApiError {
-  const err = (body as { error?: { code?: string; message?: string } } | null)?.error;
+  const err = (body as { error?: { code?: string; message?: string; details?: unknown } } | null)?.error;
   return new ApiError(
     status,
     err?.code ?? 'HTTP_ERROR',
     err?.message ?? (status >= 500 ? 'Server error. Please try again.' : `Request failed (${status})`),
+    err?.details,
   );
 }
 
 interface FetchOptions {
-  method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   json?: unknown;
   signal?: AbortSignal;
 }

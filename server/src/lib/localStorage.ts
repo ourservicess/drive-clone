@@ -1,9 +1,9 @@
 import { createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { createWriteStream } from 'node:fs';
-import { mkdir, open, rename, rm } from 'node:fs/promises';
+import { mkdir, open, rename, rm, stat, truncate, writeFile } from 'node:fs/promises';
 import { dirname, resolve, sep } from 'node:path';
 import { pipeline } from 'node:stream/promises';
-import { contentDisposition, type StorageDriver } from './storage.js';
+import { contentDisposition, exactLength, type StorageDriver } from './storage.js';
 
 /**
  * Stores files in a folder on this computer instead of Cloudflare R2.
@@ -102,6 +102,39 @@ export function createLocalDriver(rootDir: string): StorageDriver {
       } finally {
         await handle.close();
       }
+    },
+
+    // Resumable uploads: parts are written into "<file>.partial" at their
+    // byte offset; completing renames it to the real name.
+    async startMultipart(key) {
+      const path = keyToPath(rootDir, key);
+      await mkdir(dirname(path), { recursive: true });
+      await writeFile(`${path}.partial`, '');
+      return null;
+    },
+
+    async putPart(key, _multipartId, _index, offset, size, body) {
+      const partial = `${keyToPath(rootDir, key)}.partial`;
+      const info = await stat(partial).catch(() => null);
+      if (!info) throw new Error('Upload data not found on disk');
+      if (info.size < offset) throw new Error('Upload data on disk is shorter than expected');
+      // Drop anything after `offset` (e.g. half a part from a dropped connection).
+      await truncate(partial, offset);
+      try {
+        await pipeline(body, exactLength(size), createWriteStream(partial, { flags: 'r+', start: offset }));
+      } catch (err) {
+        await truncate(partial, offset).catch(() => undefined); // undo the incomplete part
+        throw err;
+      }
+    },
+
+    async completeMultipart(key) {
+      const path = keyToPath(rootDir, key);
+      await rename(`${path}.partial`, path);
+    },
+
+    async abortMultipart(key) {
+      await rm(`${keyToPath(rootDir, key)}.partial`, { force: true });
     },
   };
 }

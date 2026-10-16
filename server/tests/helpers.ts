@@ -2,6 +2,7 @@ import { createApp } from '../src/app.js';
 import { prisma } from '../src/lib/db.js';
 import { createMemoryDriver, setStorageDriver } from '../src/lib/storage.js';
 import { authRateLimit } from '../src/routes/auth.js';
+import { publicRateLimit } from '../src/routes/public.js';
 
 export const ORIGIN = 'http://localhost:3000';
 export const app = createApp();
@@ -11,17 +12,23 @@ setStorageDriver(memoryStorage);
 /** Wipes all collections and stored objects so every test starts clean. */
 export async function resetAll() {
   await prisma.session.deleteMany();
+  await prisma.upload.deleteMany();
+  await prisma.shareLink.deleteMany();
   await prisma.file.deleteMany();
   await prisma.folder.updateMany({ data: { parentId: null } }); // see deleteFoldersAndFiles()
   await prisma.folder.deleteMany();
   await prisma.user.deleteMany();
   memoryStorage.objects.clear();
+  memoryStorage.parts.clear();
   authRateLimit.reset();
+  publicRateLimit.reset();
 }
 
 interface RequestOptions {
   json?: unknown;
   form?: FormData;
+  /** raw request body, e.g. the bytes of one upload piece */
+  raw?: Uint8Array | string;
   headers?: Record<string, string>;
 }
 
@@ -42,6 +49,9 @@ export class TestClient {
       body = JSON.stringify(options.json);
     } else if (options.form) {
       body = options.form;
+    } else if (options.raw !== undefined) {
+      headers['Content-Type'] ??= 'application/octet-stream';
+      body = options.raw;
     }
 
     const res = await app.request(path, { method, headers, body });
@@ -59,6 +69,7 @@ export class TestClient {
   get = (path: string, o?: RequestOptions) => this.request('GET', path, o);
   post = (path: string, o?: RequestOptions) => this.request('POST', path, o);
   patch = (path: string, o?: RequestOptions) => this.request('PATCH', path, o);
+  put = (path: string, o?: RequestOptions) => this.request('PUT', path, o);
   delete = (path: string, o?: RequestOptions) => this.request('DELETE', path, o);
 
   async upload(files: Array<{ name: string; content: string | Uint8Array }>, folderId?: string) {

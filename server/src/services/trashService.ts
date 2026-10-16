@@ -7,6 +7,7 @@ import type { FileDTO, FolderDTO } from '../types.js';
 import { getOwnedFile, takenFileNames } from './fileService.js';
 import { collectDescendantFolderIds, getOwnedFolder, takenFolderNames } from './folderService.js';
 import { fileInclude, toFileDTO, toFolderDTO } from './serializers.js';
+import { deleteSharesForFiles } from './shareService.js';
 
 /*
  * How Trash works
@@ -59,6 +60,7 @@ export async function deleteFilePermanently(ownerId: string, id: string): Promis
   }
   // Storage first: if this fails, the DB row stays and the user can simply retry.
   await storage().deleteObjects([file.storageKey]);
+  await deleteSharesForFiles(ownerId, [file.id]); // its public link stops existing too
   await prisma.file.delete({ where: { id: file.id } });
 }
 
@@ -128,10 +130,11 @@ export async function deleteFolderPermanently(ownerId: string, id: string): Prom
   const folderIds = [id, ...(await collectDescendantFolderIds(ownerId, id))];
   const files = await prisma.file.findMany({
     where: { ownerId, folderId: { in: folderIds } },
-    select: { storageKey: true },
+    select: { id: true, storageKey: true },
   });
 
   await storage().deleteObjects(files.map((f) => f.storageKey));
+  await deleteSharesForFiles(ownerId, files.map((f) => f.id));
   // MongoDB has no cascading foreign keys, so remove the whole tree explicitly.
   await prisma.$transaction(deleteFoldersAndFiles(ownerId, { id: { in: folderIds } }, { folderId: { in: folderIds } }));
 }
@@ -174,9 +177,10 @@ export async function listTrash(ownerId: string): Promise<{ files: FileDTO[]; fo
 export async function emptyTrash(ownerId: string): Promise<{ deletedFiles: number; deletedFolders: number }> {
   const files = await prisma.file.findMany({
     where: { ownerId, trashedAt: { not: null } },
-    select: { storageKey: true },
+    select: { id: true, storageKey: true },
   });
   await storage().deleteObjects(files.map((f) => f.storageKey));
+  await deleteSharesForFiles(ownerId, files.map((f) => f.id));
 
   const trashed = { trashedAt: { not: null } };
   const [deletedFiles, , deletedFolders] = await prisma.$transaction(

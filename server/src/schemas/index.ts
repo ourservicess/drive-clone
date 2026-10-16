@@ -54,6 +54,26 @@ export const updateFileSchema = z
 
 export const starSchema = z.object({ starred: z.boolean() });
 
+// ---------- resumable uploads ----------
+export const createUploadSchema = z.object({
+  // The browser's file name (cleaned on the server).
+  name: z.string().min(1, 'Name is required').max(1000),
+  size: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
+  folderId: idSchema.nullable().optional(),
+  // The file's last-modified time, only used to recognise the same file on resume.
+  lastModified: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional(),
+});
+
+export const chunkParam = z.object({
+  id: idSchema,
+  index: z.coerce.number().int().min(0).max(10_000_000),
+});
+
+// ---------- sharing ----------
+export const shareSchema = z.object({ allowDownload: z.boolean().default(false) });
+// Share tokens are 32 random bytes in base64url = 43 characters.
+export const tokenParam = z.object({ token: z.string().regex(/^[A-Za-z0-9_-]{43}$/, 'Invalid link') });
+
 // ---------- folders ----------
 export const createFolderSchema = z.object({
   name: nameField,

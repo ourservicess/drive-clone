@@ -10,7 +10,10 @@ A Google Drive-style cloud file storage app.
 ## Features
 
 - Email/password accounts (Argon2 hashing, HttpOnly session cookies, rate-limited login)
-- Upload one or many files (button or drag-and-drop) with progress bars and cancel
+- Upload one or many files of any size (button or drag-and-drop) with progress bars and cancel
+- **Resumable uploads:** files are sent in 8 MB pieces. If the internet drops, the upload waits and continues from where it stopped. After closing the page, **Resume** from the Uploads page by choosing the same file again.
+- **Upload history** (Uploads page): every upload with its status (completed, interrupted, cancelled, …)
+- **Public share links:** "Anyone with the link can view". Visitors preview the file in the browser without logging in; downloading is off unless you allow it.
 - Grid and list views, sort by name / upload date / size, search by name
 - Preview images, PDFs, video, audio and text; download via short-lived signed URLs
 - Rename, move, star, and details panel; right-click context menu with keyboard support
@@ -158,6 +161,8 @@ Edit `server/.env`:
 | `LOCAL_STORAGE_DIR` | `./storage` | Where local files go (relative to `server/`) |
 | `R2_ACCOUNT_ID` / `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` / `R2_BUCKET` | — | Only for `STORAGE_DRIVER=r2` (step 4.3) |
 | `MAX_UPLOAD_MB` | `0` | Max size per file in MB; `0` = no limit (uploads are streamed, so big files don't use extra memory) |
+| `UPLOAD_CHUNK_MB` | `8` | Size of each upload piece; a dropped connection only re-sends one piece (≥ 5 for R2) |
+| `UPLOAD_EXPIRY_DAYS` | `7` | Unfinished uploads with no progress for this long are deleted |
 | `STORAGE_QUOTA_MB` | `5120` | Storage per user (5 GB) |
 | `SESSION_TTL_DAYS` | `7` | Login lifetime (extended while active) |
 | `TRUST_PROXY` | `false` | Set `true` only behind a reverse proxy that sets `X-Forwarded-For` |
@@ -208,6 +213,8 @@ The tests start their **own throwaway in-memory MongoDB replica set** and use an
   - user B gets 404 for every read and write on user A's files and folders
   - B can't upload or move items into A's folders
   - an `ownerId` sent in the request body is ignored
+- **resumable uploads** (`resumable.test.ts`): multi-piece upload, resume after a cut-off piece, out-of-order or repeated pieces, safe repeat of "complete", empty files, quota including in-progress uploads, cancel, history, ownership isolation
+- **share links** (`share.test.ts`): public preview without login, download blocked unless allowed, link stops on revoke/Trash/delete, no data leaks, other users cannot share your files
 - **files / folders / trash** (`files.test.ts`):
   - upload, sorting, duplicate names, rename, preview and download
   - star, recent, search (including special characters like `(` and `.`) and storage usage
@@ -260,7 +267,21 @@ All endpoints except signup and login require the session cookie. Every error ha
 | GET | `/api/files/search` | `?q=` | `{files,folders}` |
 | GET | `/api/files/recent` | – | `{files}` |
 | GET | `/api/files/starred` | `?sort&order` | `{files}` |
-| POST | `/api/files/upload` | multipart `files` (1–20), optional `folderId` | `{files}` 201 |
+| POST | `/api/files/upload` | multipart `files` (1–20), optional `folderId` | `{files}` 201 (one-shot upload; the web app uses resumable uploads below) |
+| GET | `/api/files/:id/share` | – | `{share}` or `{share:null}` |
+| POST | `/api/files/:id/share` | `{allowDownload}` | `{share:{token,allowDownload}}` (create or update the public link) |
+| DELETE | `/api/files/:id/share` | – | `{ok}` (turn link sharing off) |
+| GET | `/api/uploads` | – | `{uploads}` (upload history, newest first) |
+| POST | `/api/uploads` | `{name,size,folderId?,lastModified?}` | `{upload}` 201 (starts a resumable upload) |
+| GET | `/api/uploads/:id` | – | `{upload}` (incl. `receivedBytes`, to know where to continue) |
+| PUT | `/api/uploads/:id/chunks/:index` | raw bytes of piece `index` | `{receivedBytes}`; 409 `UPLOAD_OUT_OF_SYNC` gives the right position |
+| POST | `/api/uploads/:id/complete` | – | `{upload,file}` (safe to repeat) |
+| POST | `/api/uploads/:id/cancel` | – | `{upload}` (deletes the pieces received so far) |
+| DELETE | `/api/uploads/:id` | – | `{ok}` (remove from history) |
+| DELETE | `/api/uploads` | – | `{removed}` (clear finished entries) |
+| GET | `/api/public/:token` | – (no login) | `{file:{name,mimeType,size,ownerName,allowDownload}}` |
+| GET | `/api/public/:token/preview` | – (no login) | same shape as the owner's preview |
+| GET | `/api/public/:token/download` | – (no login) | `{url}`, or 403 `DOWNLOAD_DISABLED` |
 | GET | `/api/files/:id` | – | `{file}` |
 | GET | `/api/files/:id/download` | – | `{url,expiresIn}` (signed, attachment) |
 | GET | `/api/files/:id/preview` | – | `{kind,url}` or `{kind:'text',content,truncated}` or `{kind:'none'}` |
@@ -294,6 +315,8 @@ All endpoints except signup and login require the session cookie. Every error ha
 | Upload validation | Extension allowlist, MIME decided by the server, optional per-file size limit, per-user quota (checked while streaming), max 20 files per request, all-or-nothing cleanup |
 | Active content | HTML/SVG/JS are never rendered: previews show them as plain text in `<pre>`, downloads are forced `attachment`; locally served files also get `nosniff` and a `sandbox` Content-Security-Policy |
 | Local file links | HMAC-signed with a per-start random secret, expire in 1–5 minutes, and the key must match `users/<id>/<uuid>`, so no path traversal |
+| Public share links | 256-bit random tokens (unguessable); visitors see only name, type, size, date and owner's display name (no email, ids or storage keys); the link stops working while the file is in Trash and is deleted with the file; public endpoints are rate-limited; download is off by default. View-only cannot stop someone saving what is shown on their screen. |
+| Resumable uploads | Type, size and quota (including uploads still in progress) are checked **before** the first byte; each piece must be exactly the expected size and arrive in order; half-received pieces are discarded |
 | Storage cleanup | Failed uploads delete already-stored objects; permanent deletes remove R2 objects before DB documents |
 | NoSQL injection | Ids must be 24-hex ObjectIds (validated by Zod); search text is regex-escaped before querying |
 | Secrets | Only on the server, validated at startup; `.env` is git-ignored |
@@ -306,5 +329,7 @@ All endpoints except signup and login require the session cookie. Every error ha
 - **Port 27017 already in use:** another MongoDB is running. Stop it, or run `MONGO_PORT=27018 npm run db:local` and change the port in `DATABASE_URL`.
 - **Uploads fail with "Could not save the file to cloud storage":** with `STORAGE_DRIVER=r2`, check the R2 keys, account id and bucket name. With `local`, check that the disk isn't full and the folder is writable. The real error is printed in the server terminal.
 - **A preview stops loading after you leave it open a long time, or after a server restart:** the signed link expired. Close and reopen the preview.
+- **"That is not the same file" when resuming:** choose the exact same file (same name, size and last-modified time). If the file was edited, start a new upload instead.
+- **An upload says "Waiting for connection":** it continues by itself when the internet is back. Leave the page open.
 - **Images or PDFs don't preview:** the signed URL comes from `<account>.r2.cloudflarestorage.com`. Make sure browser extensions aren't blocking it.
 - **Logged out unexpectedly:** sessions expire after `SESSION_TTL_DAYS` without activity.
