@@ -12,7 +12,7 @@ export default defineConfig({
     hookTimeout: 120_000, // the first run downloads the MongoDB binary
     env: {
       NODE_ENV: 'test',
-      WEB_ORIGIN: 'http://localhost:3000',
+      WEB_ORIGIN: 'http://localhost:5000',
       // Small limits make the upload-validation tests fast.
       MAX_UPLOAD_MB: '1',
       STORAGE_QUOTA_MB: '3',

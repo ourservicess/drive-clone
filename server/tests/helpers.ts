@@ -4,7 +4,7 @@ import { createMemoryDriver, setStorageDriver } from '../src/lib/storage.js';
 import { authRateLimit } from '../src/routes/auth.js';
 import { publicRateLimit } from '../src/routes/public.js';
 
-export const ORIGIN = 'http://localhost:3000';
+export const ORIGIN = 'http://localhost:5000';
 export const app = createApp();
 export const memoryStorage = createMemoryDriver();
 setStorageDriver(memoryStorage);

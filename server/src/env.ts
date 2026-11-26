@@ -9,8 +9,8 @@ import { z } from 'zod';
  */
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
-  PORT: z.coerce.number().int().positive().default(3001),
-  WEB_ORIGIN: z.url().default('http://localhost:3000'),
+  PORT: z.coerce.number().int().positive().default(5001),
+  WEB_ORIGIN: z.url().default('http://localhost:5000'),
   TRUST_PROXY: z
     .enum(['true', 'false'])
     .default('false')
